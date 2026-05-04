@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # needed to create releases
+  contents: write
 
 jobs:
   heartbeat:
@@ -19,28 +19,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
-        run: pip install eth_account requests dnspython
+      - name: Install dependencies
+        run: pip install eth_account dnspython
 
       - name: Run heartbeat agent
-        id: heartbeat
+        run: python .github/scripts/heartbeat.py
         env:
           AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
-          PINATA_JWT: ${{ secrets.PINATA_JWT }}
-          # IPNS_NAME is no longer needed, but we can keep it for optional future use
-        run: python .github/scripts/heartbeat.py
 
-      - name: Download the log from IPFS (using the new CID)
+      - name: Commit and push log.json
         run: |
-          curl -o log.json "https://ipfs.io/ipfs/${{ steps.heartbeat.outputs.new_cid }}"
-
-      - name: Create GitHub Release and upload log.json
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: "Latest Heartbeat Log"
-          body: "Automatic daily heartbeat log. CID: ${{ steps.heartbeat.outputs.new_cid }}"
-          files: log.json
-          prerelease: false
-          draft: false
-          make_latest: true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add log.json
+          git commit -m "Update heartbeat log" || echo "No changes to commit"
+          git push
