@@ -10,7 +10,7 @@ from eth_account.messages import encode_defunct
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 PINATA_JWT = os.environ["PINATA_JWT"]
-FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]  # Bearer token
+FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]  # Your Access Key (Bearer token)
 IPNS_NAME = os.environ["IPNS_NAME"]
 
 def get_current_cid():
@@ -44,7 +44,7 @@ def main():
     }
     attestation["signature"] = sign_attestation(attestation)
 
-    # Fetch existing log from IPNS
+    # Fetch existing log
     log = []
     try:
         resp = requests.get(f"https://ipfs.io/ipns/{IPNS_NAME}", timeout=10)
@@ -65,13 +65,21 @@ def main():
     new_cid = pin_resp.json()["IpfsHash"]
     print(f"Pinned new log CID: {new_cid}")
 
-    # Update IPNS via Filebase REST API (Bearer token)
-    fb_url = f"https://api.filebase.com/ipns/{IPNS_NAME}"
-    fb_headers = {"Authorization": f"Bearer {FILEBASE_ACCESS_KEY}", "Content-Type": "application/json"}
-    fb_payload = {"cid": new_cid}
-    fb_resp = requests.put(fb_url, json=fb_payload, headers=fb_headers)
+    # --- Update IPNS using correct Filebase endpoint ---
+    # Correct domain: api.filebase.io
+    fb_url = f"https://api.filebase.io/v1/ipns/publish"
+    fb_headers = {
+        "Authorization": f"Bearer {FILEBASE_ACCESS_KEY}",
+        "Content-Type": "application/json"
+    }
+    fb_payload = {
+        "name": IPNS_NAME,
+        "cid": new_cid
+    }
+    fb_resp = requests.post(fb_url, json=fb_payload, headers=fb_headers)
+
     if fb_resp.status_code == 200:
-        print(f"✅ IPNS updated: https://ipfs.io/ipns/{IPNS_NAME}")
+        print(f"✅ IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
     else:
         print(f"❌ IPNS update failed: {fb_resp.status_code} - {fb_resp.text}")
         exit(1)
