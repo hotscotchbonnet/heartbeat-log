@@ -5,23 +5,32 @@ on:
     - cron: '0 9 * * *'
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   heartbeat:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+
       - name: Install dependencies
         run: pip install eth_account requests dnspython
+
+      - name: Install IPFS (kubo)
+        run: |
+          wget https://dist.ipfs.tech/kubo/v0.30.0/kubo_v0.30.0_linux-amd64.tar.gz
+          tar -xvzf kubo_v0.30.0_linux-amd64.tar.gz
+          cd kubo
+          sudo bash install.sh
+          ipfs init
+          ipfs daemon --enable-namesys-pubsub &
+          sleep 10   # wait for daemon to start
+
       - name: Run heartbeat agent
         env:
           AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          IPFS_PRIVATE_KEY: ${{ secrets.IPFS_PRIVATE_KEY }}
+          IPNS_NAME: ${{ secrets.IPNS_NAME }}
         run: python .github/scripts/heartbeat.py
+
+      - name: Stop IPFS daemon (cleanup)
+        run: killall ipfs || true
