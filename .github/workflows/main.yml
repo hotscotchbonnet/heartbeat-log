@@ -1,25 +1,26 @@
-name: Generate w3name Key
+name: Generate w3name Key (Python)
 
 on:
-  workflow_dispatch:   # manual trigger only
+  workflow_dispatch:
 
 jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '20'
-      - name: Generate w3name key
+          python-version: '3.11'
+      - name: Install w3name Python package
+        run: pip install w3name
+      - name: Generate key
         run: |
-          npm install w3name
-          node -e "
-            const { Name } = require('w3name');
-            (async () => {
-              const name = await Name.create();
-              const privateKeyBase64 = Buffer.from(name.key.bytes).toString('base64');
-              console.log('IPNS_NAME=' + name.toString());
-              console.log('W3NAME_PRIVATE_KEY=' + privateKeyBase64);
-            })();
-          "
+          python3 << 'EOF'
+          import w3name
+          import base64
+          name = w3name.Name.create()
+          private_key_bytes = name.key.bytes
+          private_key_b64 = base64.b64encode(private_key_bytes).decode('ascii')
+          print("IPNS_NAME=" + name.to_str())
+          print("W3NAME_PRIVATE_KEY=" + private_key_b64)
+          EOF
