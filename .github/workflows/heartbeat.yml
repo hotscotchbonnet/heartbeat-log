@@ -41,9 +41,9 @@ jobs:
           args: |
             -c "
             set -e
-            echo \"$PRIVATE_KEY_B64\" | base64 -d > /tmp/key.bin
+            echo \"$PRIVATE_KEY_B64\" | base64 -d > /tmp/key.pem
             ipfs init
-            ipfs key import heartbeat-key /tmp/key.bin
+            ipfs key import heartbeat-key -f pem-pkcs8-cleartext /tmp/key.pem
             ipfs name publish --key=heartbeat-key /ipfs/$NEW_CID
             echo \"✅ Published $NEW_CID to $IPNS_NAME\"
             "
