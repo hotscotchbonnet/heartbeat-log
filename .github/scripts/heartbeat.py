@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import json
 import os
-import subprocess
-import time
 import requests
 import dns.resolver
+import boto3
+from botocore.client import Config
 from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -12,11 +12,13 @@ from eth_account.messages import encode_defunct
 # ----- Configuration -----
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
-PINATA_JWT = os.environ.get("PINATA_JWT", "")  # optional backup
-IPFS_PRIVATE_KEY_B64 = os.environ["IPFS_PRIVATE_KEY"]
-IPNS_NAME = os.environ.get("IPNS_NAME", "")   # optional, script can read from key
+PINATA_JWT = os.environ["PINATA_JWT"]
+FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]
+FILEBASE_SECRET_KEY = os.environ["FILEBASE_SECRET_KEY"]
+IPNS_NAME = os.environ["IPNS_NAME"]
 
 def get_current_cid():
+    """Get current CID via DNS TXT record (most reliable)"""
     try:
         answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
         for rdata in answers:
@@ -25,11 +27,11 @@ def get_current_cid():
                 parts = txt.split("/ipfs/")
                 if len(parts) > 1:
                     cid = parts[1]
-                    print(f"Resolved main site CID: {cid}")
+                    print(f"Resolved CID from DNS TXT: {cid}")
                     return cid
     except Exception as e:
-        print(f"DNS lookup failed: {e}")
-    raise Exception("Could not resolve main site CID")
+        print(f"DNS TXT lookup failed: {e}")
+    raise Exception("Could not resolve CID for amykellam.com")
 
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
@@ -37,21 +39,6 @@ def sign_attestation(data_dict):
     message_hash = encode_defunct(text=message)
     signed = account.sign_message(message_hash)
     return signed.signature.hex()
-
-def get_ipns_name():
-    # Try to read from environment, otherwise derive from key after import
-    if IPNS_NAME:
-        return IPNS_NAME
-    # Fallback: import key temporarily to get the name
-    with open("/tmp/key.priv", "w") as f:
-        f.write(IPFS_PRIVATE_KEY_B64)
-    result = subprocess.run(
-        ["ipfs", "key", "import", "temp-key", "-"],
-        input=base64.b64decode(IPFS_PRIVATE_KEY_B64),
-        capture_output=True, text=True
-    )
-    # This is messy; better to set IPNS_NAME secret. We'll require it.
-    raise Exception("Please set IPNS_NAME secret")
 
 def main():
     print("Starting heartbeat...")
@@ -69,52 +56,48 @@ def main():
     signature = sign_attestation(attestation)
     attestation["signature"] = signature
 
-    # Fetch existing log from current IPNS (via public gateway)
+    # Fetch existing log from current IPNS address (if any)
     log = []
     try:
-        resp = requests.get(f"https://ipfs.io/ipns/{IPNS_NAME}", timeout=10)
+        log_url = f"https://ipfs.io/ipns/{IPNS_NAME}"
+        resp = requests.get(log_url, timeout=10)
         if resp.status_code == 200:
             log = resp.json()
-            print(f"Fetched existing log: {len(log)} entries")
+            print(f"Fetched existing log with {len(log)} entries.")
+        else:
+            print("No existing log found, starting fresh.")
     except Exception as e:
-        print(f"No existing log or fetch failed: {e}")
+        print(f"Could not fetch existing log: {e}")
 
     log.append(attestation)
     if len(log) > 365:
         log = log[-365:]
 
-    # Optional: Pin to Pinata as backup (keep this, it's reliable)
-    if PINATA_JWT:
-        headers = {"Authorization": f"Bearer {PINATA_JWT}", "Content-Type": "application/json"}
-        payload = {"pinataContent": log, "pinataMetadata": {"name": "heartbeat_log.json"}}
-        pinata_resp = requests.post("https://api.pinata.cloud/pinning/pinJSONToIPFS", json=payload, headers=headers)
-        pinata_resp.raise_for_status()
-        new_cid = pinata_resp.json()["IpfsHash"]
-        print(f"Pinned to Pinata (backup): {new_cid}")
-    else:
-        # If no Pinata, we need to add the file to the local node directly
-        new_cid = None
+    # Pin new log to Pinata
+    headers = {"Authorization": f"Bearer {PINATA_JWT}", "Content-Type": "application/json"}
+    payload = {"pinataContent": log, "pinataMetadata": {"name": "heartbeat_log.json"}}
+    pinata_resp = requests.post("https://api.pinata.cloud/pinning/pinJSONToIPFS", json=payload, headers=headers)
+    pinata_resp.raise_for_status()
+    new_cid = pinata_resp.json()["IpfsHash"]
+    print(f"Pinned new log to Pinata with CID: {new_cid}")
 
-    # --- IPFS local node publishing ---
-    # Write log to file
-    with open("/tmp/log.json", "w") as f:
-        json.dump(log, f)
+    # Update IPNS using Filebase S3 API (works reliably)
+    s3 = boto3.client('s3',
+        endpoint_url='https://s3.filebase.com',
+        aws_access_key_id=FILEBASE_ACCESS_KEY,
+        aws_secret_access_key=FILEBASE_SECRET_KEY,
+        config=Config(signature_version='s3v4')
+    )
+    # The IPNS name is stored as an object in the special 'ipns' bucket
+    try:
+        s3.put_object(Bucket='ipns', Key=IPNS_NAME, Body=new_cid, ContentType='text/plain')
+        print(f"IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
+    except Exception as e:
+        print(f"IPNS update via S3 failed: {e}")
+        # Fallback: print CID for manual update
+        print(f"Please manually set IPNS name {IPNS_NAME} to CID {new_cid} in Filebase dashboard.")
 
-    # Add file to local node (node must be running)
-    add_output = subprocess.check_output(["ipfs", "add", "-Q", "/tmp/log.json"], text=True).strip()
-    new_cid = add_output
-    print(f"Added log to local node: {new_cid}")
-
-    # Import IPNS private key
-    key_import_cmd = f'echo "{IPFS_PRIVATE_KEY_B64}" | base64 -d | ipfs key import heartbeat-key -'
-    subprocess.run(key_import_cmd, shell=True, check=True)
-
-    # Publish to IPNS
-    pub_output = subprocess.check_output(["ipfs", "name", "publish", "--key=heartbeat-key", f"/ipfs/{new_cid}"], text=True)
-    print(f"IPNS published: {pub_output.strip()}")
-
-    print("Heartbeat complete.")
-    print(f"Log available at: https://ipfs.io/ipns/{IPNS_NAME}")
+    print("Heartbeat completed.")
 
 if __name__ == "__main__":
     main()
