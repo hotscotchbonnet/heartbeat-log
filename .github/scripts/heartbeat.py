@@ -3,8 +3,6 @@ import json
 import os
 import requests
 import dns.resolver
-import boto3
-from botocore.client import Config
 from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -12,9 +10,8 @@ from eth_account.messages import encode_defunct
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 PINATA_JWT = os.environ["PINATA_JWT"]
-FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]
-FILEBASE_SECRET_KEY = os.environ["FILEBASE_SECRET_KEY"]
-IPNS_NAME = os.environ["IPNS_NAME"]
+# IPNS_NAME is used only to fetch existing log (optional)
+IPNS_NAME = os.environ.get("IPNS_NAME")
 
 def get_current_cid():
     answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
@@ -47,15 +44,16 @@ def main():
     }
     attestation["signature"] = sign_attestation(attestation)
 
-    # Fetch existing log
+    # Try to fetch existing log from previous IPNS pointer (if available)
     log = []
-    try:
-        resp = requests.get(f"https://ipfs.io/ipns/{IPNS_NAME}", timeout=10)
-        if resp.status_code == 200:
-            log = resp.json()
-            print(f"Fetched {len(log)} existing entries.")
-    except Exception as e:
-        print(f"Starting fresh log: {e}")
+    if IPNS_NAME:
+        try:
+            resp = requests.get(f"https://ipfs.io/ipns/{IPNS_NAME}", timeout=10)
+            if resp.status_code == 200:
+                log = resp.json()
+                print(f"Fetched {len(log)} existing entries.")
+        except Exception as e:
+            print(f"No existing log found, starting fresh: {e}")
 
     log.append(attestation)
     if len(log) > 365:
@@ -68,16 +66,11 @@ def main():
     new_cid = pin_resp.json()["IpfsHash"]
     print(f"Pinned new log CID: {new_cid}")
 
-    # --- Update IPNS using Filebase S3 API (works reliably) ---
-    s3 = boto3.client('s3',
-        endpoint_url='https://s3.filebase.com',
-        aws_access_key_id=FILEBASE_ACCESS_KEY,
-        aws_secret_access_key=FILEBASE_SECRET_KEY,
-        config=Config(signature_version='s3v4')
-    )
-    # IPNS names are stored as objects in the 'ipns' bucket
-    s3.put_object(Bucket='ipns', Key=IPNS_NAME, Body=new_cid, ContentType='text/plain')
-    print(f"✅ IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
+    # Output for GitHub Actions
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+        print(f"new_cid={new_cid}", file=f)
+        # Also output the full log if needed (optional)
+        # print(f"log_json={json.dumps(log)}", file=f)
 
 if __name__ == "__main__":
     main()
