@@ -1,0 +1,33 @@
+name: Generate IPFS Key (PEM format)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    container:
+      image: ipfs/kubo:latest
+    steps:
+      - name: Generate and export PEM key
+        run: |
+          ipfs init
+          ipfs key gen --type=rsa --size=2048 heartbeat-key
+          # Export in PEM format (works with import -f pem-pkcs8-cleartext)
+          ipfs key export heartbeat-key -o /tmp/key.pem --format=pem-pkcs8-cleartext
+          # Get IPNS name (Peer ID)
+          IPNS_NAME=$(ipfs key list -l | awk '/heartbeat-key/ {print $2}')
+          echo "IPNS_NAME=$IPNS_NAME"
+          # Base64 encode the PEM file (no line breaks)
+          BASE64_KEY=$(base64 -w 0 /tmp/key.pem)
+          echo "BASE64_PRIVATE_KEY=$BASE64_KEY"
+          # Save as artifacts for easy copy
+          echo "$IPNS_NAME" > ipns_name.txt
+          echo "$BASE64_KEY" > private_key_b64.txt
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipfs-key-pem
+          path: |
+            ipns_name.txt
+            private_key_b64.txt
