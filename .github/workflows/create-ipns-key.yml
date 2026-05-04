@@ -1,0 +1,44 @@
+name: Create IPNS Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Kubo
+        run: |
+          wget https://dist.ipfs.tech/kubo/v0.30.0/kubo_v0.30.0_linux-amd64.tar.gz
+          tar -xvzf kubo_v0.30.0_linux-amd64.tar.gz
+          cd kubo
+          sudo bash install.sh
+          ipfs init
+
+      - name: Generate IPNS key
+        id: gen
+        run: |
+          IPNS_NAME=$(ipfs key gen --type=rsa --size=2048 heartbeat-key)
+          ipfs key export heartbeat-key -o - | base64 > key.b64
+          echo "name=$IPNS_NAME" >> $GITHUB_OUTPUT
+          echo "priv=$(cat key.b64)" >> $GITHUB_OUTPUT
+
+      - name: Add secrets via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          IPNS_NAME: ${{ steps.gen.outputs.name }}
+          IPFS_PRIV_KEY: ${{ steps.gen.outputs.priv }}
+        run: |
+          # Add IPNS_NAME as a secret
+          echo -n "$IPNS_NAME" | gh secret set IPNS_NAME --repo "$REPO" --body -
+          # Add IPFS_PRIVATE_KEY as a secret
+          echo -n "$IPFS_PRIV_KEY" | gh secret set IPFS_PRIVATE_KEY --repo "$REPO" --body -
+          echo "Secrets added successfully"
+
+      - name: Display IPNS name (for your HTML)
+        run: |
+          echo "Your new IPNS name is: ${{ steps.gen.outputs.name }}"
+          echo "Add this to your heartbeat.html as the fetch URL: https://ipfs.io/ipns/${{ steps.gen.outputs.name }}"
