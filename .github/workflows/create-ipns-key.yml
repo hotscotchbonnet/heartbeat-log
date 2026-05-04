@@ -18,10 +18,21 @@ jobs:
       - name: Generate IPNS key
         id: gen
         run: |
+          # Generate key
           IPNS_NAME=$(ipfs key gen --type=rsa --size=2048 heartbeat-key)
-          ipfs key export heartbeat-key -o - | base64 > key.b64
           echo "IPNS_NAME=$IPNS_NAME" >> $GITHUB_OUTPUT
-          echo "IPFS_PRIVATE_KEY=$(cat key.b64)" >> $GITHUB_OUTPUT
+          echo "Generated IPNS name: $IPNS_NAME"
+          
+          # Export private key to file
+          ipfs key export heartbeat-key -o key.priv
+          if [ ! -f key.priv ]; then
+            echo "ERROR: key.priv not created"
+            exit 1
+          fi
+          base64 -w 0 key.priv > key.b64
+          PRIV_B64=$(cat key.b64)
+          echo "IPFS_PRIVATE_KEY=$PRIV_B64" >> $GITHUB_OUTPUT
+          echo "Private key exported and encoded (length: ${#PRIV_B64})"
 
       - name: Display values (copy these)
         run: |
