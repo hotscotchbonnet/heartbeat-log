@@ -18,7 +18,6 @@ FILEBASE_SECRET_KEY = os.environ["FILEBASE_SECRET_KEY"]
 IPNS_NAME = os.environ["IPNS_NAME"]
 
 def get_current_cid():
-    """Get current CID via DNS TXT record (most reliable)"""
     try:
         answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
         for rdata in answers:
@@ -38,7 +37,15 @@ def sign_attestation(data_dict):
     message = json.dumps(data_dict, sort_keys=True, separators=(',', ':'))
     message_hash = encode_defunct(text=message)
     signed = account.sign_message(message_hash)
-    return signed.signature.hex()
+    # Convert v to 27 or 28 for ethers compatibility
+    v = signed.v
+    if v < 27:
+        v += 27
+    # Build 65-byte signature: r (32) + s (32) + v (1)
+    r_bytes = signed.r.to_bytes(32, 'big')
+    s_bytes = signed.s.to_bytes(32, 'big')
+    signature_bytes = r_bytes + s_bytes + bytes([v])
+    return signature_bytes.hex()
 
 def main():
     print("Starting heartbeat...")
@@ -56,7 +63,7 @@ def main():
     signature = sign_attestation(attestation)
     attestation["signature"] = signature
 
-    # Fetch existing log from current IPNS address (if any)
+    # Fetch existing log
     log = []
     try:
         log_url = f"https://ipfs.io/ipns/{IPNS_NAME}"
@@ -81,21 +88,19 @@ def main():
     new_cid = pinata_resp.json()["IpfsHash"]
     print(f"Pinned new log to Pinata with CID: {new_cid}")
 
-    # Update IPNS using Filebase S3 API (works reliably)
+    # Update IPNS using Filebase S3
     s3 = boto3.client('s3',
         endpoint_url='https://s3.filebase.com',
         aws_access_key_id=FILEBASE_ACCESS_KEY,
         aws_secret_access_key=FILEBASE_SECRET_KEY,
         config=Config(signature_version='s3v4')
     )
-    # The IPNS name is stored as an object in the special 'ipns' bucket
     try:
         s3.put_object(Bucket='ipns', Key=IPNS_NAME, Body=new_cid, ContentType='text/plain')
         print(f"IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
     except Exception as e:
         print(f"IPNS update via S3 failed: {e}")
-        # Fallback: print CID for manual update
-        print(f"Please manually set IPNS name {IPNS_NAME} to CID {new_cid} in Filebase dashboard.")
+        print(f"Please manually set IPNS name {IPNS_NAME} to CID {new_cid}")
 
     print("Heartbeat completed.")
 
