@@ -1,12 +1,9 @@
-name: Daily Site Heartbeat
+  name: Daily Site Heartbeat
 
 on:
   schedule:
     - cron: '0 9 * * *'
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   heartbeat:
@@ -16,13 +13,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install eth_account requests dnspython boto3   # <-- boto3 added
-      - name: Run heartbeat agent
+      - name: Install Python deps
+        run: pip install eth_account requests dnspython
+      - name: Run heartbeat agent (Python)
+        id: heartbeat
         env:
           AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
-          FILEBASE_ACCESS_KEY: ${{ secrets.FILEBASE_ACCESS_KEY }}
-          FILEBASE_SECRET_KEY: ${{ secrets.FILEBASE_SECRET_KEY }} 
           IPNS_NAME: ${{ secrets.IPNS_NAME }}
         run: python .github/scripts/heartbeat.py
+
+      - name: Publish to IPNS (using Docker)
+        uses: docker://ipfs/kubo:latest
+        env:
+          IPNS_NAME: ${{ secrets.IPNS_NAME }}
+          PRIVATE_KEY_B64: ${{ secrets.IPFS_PRIVATE_KEY_BASE64 }}
+          NEW_CID: ${{ steps.heartbeat.outputs.new_cid }}
+        with:
+          entrypoint: /bin/sh
+          args: |
+            -c "
+            echo $PRIVATE_KEY_B64 | base64 -d > /tmp/key.pem
+            ipfs init
+            ipfs key import heartbeat-key -f pem < /tmp/key.pem
+            ipfs name publish --key=heartbeat-key /ipfs/$NEW_CID
+            "
