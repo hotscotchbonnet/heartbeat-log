@@ -41,18 +41,24 @@ def update_cloudflare_dnslink(new_cid):
     headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"}
     url = f"https://api.cloudflare.com/client/v4/zones/{CLOUDFLARE_ZONE_ID}/dns_records"
     
-    # Fetch all existing TXT records for _dnslink.log
-    resp = requests.get(url, headers=headers, params={"name": "_dnslink.log", "type": "TXT"})
+    # Fetch ALL TXT records (no filtering by name in params)
+    resp = requests.get(url, headers=headers, params={"type": "TXT"})
     resp.raise_for_status()
-    records = resp.json()["result"]
+    all_records = resp.json()["result"]
     
-    # Delete each existing record
-    for record in records:
+    # Find records with name exactly "_dnslink.log" or "_dnslink.log.amykellam.com"
+    to_delete = []
+    for record in all_records:
+        record_name = record["name"]
+        if record_name in ["_dnslink.log", "_dnslink.log.amykellam.com"]:
+            to_delete.append(record)
+    
+    for record in to_delete:
         del_resp = requests.delete(f"{url}/{record['id']}", headers=headers)
         del_resp.raise_for_status()
-        print(f"Deleted existing TXT record: {record['id']}")
+        print(f"Deleted: {record['name']} (ID: {record['id']})")
     
-    # Create a fresh record
+    # Create new record with proper name (without domain)
     data = {
         "type": "TXT",
         "name": "_dnslink.log",
@@ -61,7 +67,7 @@ def update_cloudflare_dnslink(new_cid):
     }
     create_resp = requests.post(url, headers=headers, json=data)
     create_resp.raise_for_status()
-    print(f"Created fresh DNSLink for _dnslink.log to /ipfs/{new_cid}")
+    print(f"Created new TXT record for _dnslink.log -> /ipfs/{new_cid}")
 def main():
     print("Starting heartbeat...")
     current_cid = get_current_cid()
