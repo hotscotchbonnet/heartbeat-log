@@ -3,6 +3,8 @@ import json
 import os
 import requests
 import dns.resolver
+import boto3
+from botocore.client import Config
 from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -10,7 +12,8 @@ from eth_account.messages import encode_defunct
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 PINATA_JWT = os.environ["PINATA_JWT"]
-FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]  # Your Access Key (Bearer token)
+FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]
+FILEBASE_SECRET_KEY = os.environ["FILEBASE_SECRET_KEY"]
 IPNS_NAME = os.environ["IPNS_NAME"]
 
 def get_current_cid():
@@ -65,24 +68,16 @@ def main():
     new_cid = pin_resp.json()["IpfsHash"]
     print(f"Pinned new log CID: {new_cid}")
 
-    # --- Update IPNS using correct Filebase endpoint ---
-    # Correct domain: api.filebase.io
-    fb_url = f"https://api.filebase.io/v1/ipns/publish"
-    fb_headers = {
-        "Authorization": f"Bearer {FILEBASE_ACCESS_KEY}",
-        "Content-Type": "application/json"
-    }
-    fb_payload = {
-        "name": IPNS_NAME,
-        "cid": new_cid
-    }
-    fb_resp = requests.post(fb_url, json=fb_payload, headers=fb_headers)
-
-    if fb_resp.status_code == 200:
-        print(f"✅ IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
-    else:
-        print(f"❌ IPNS update failed: {fb_resp.status_code} - {fb_resp.text}")
-        exit(1)
+    # --- Update IPNS using Filebase S3 API (works reliably) ---
+    s3 = boto3.client('s3',
+        endpoint_url='https://s3.filebase.com',
+        aws_access_key_id=FILEBASE_ACCESS_KEY,
+        aws_secret_access_key=FILEBASE_SECRET_KEY,
+        config=Config(signature_version='s3v4')
+    )
+    # IPNS names are stored as objects in the 'ipns' bucket
+    s3.put_object(Bucket='ipns', Key=IPNS_NAME, Body=new_cid, ContentType='text/plain')
+    print(f"✅ IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
 
 if __name__ == "__main__":
     main()
