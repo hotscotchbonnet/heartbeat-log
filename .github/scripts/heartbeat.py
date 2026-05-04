@@ -3,8 +3,6 @@ import json
 import os
 import requests
 import dns.resolver
-import boto3
-from botocore.client import Config
 from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -13,12 +11,11 @@ from eth_account.messages import encode_defunct
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 PINATA_JWT = os.environ["PINATA_JWT"]
-FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]
-FILEBASE_SECRET_KEY = os.environ["FILEBASE_SECRET_KEY"]
-IPNS_NAME = os.environ["IPNS_NAME"]
+CLOUDFLARE_API_TOKEN = os.environ["CLOUDFLARE_API_TOKEN"]
+CLOUDFLARE_ZONE_ID = os.environ["CLOUDFLARE_ZONE_ID"]
+DNS_RECORD_NAME = "_dnslink.log"  # TXT record for log subdomain
 
 def get_current_cid():
-    """Get current CID via DNS TXT record (most reliable)"""
     try:
         answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
         for rdata in answers:
@@ -27,11 +24,11 @@ def get_current_cid():
                 parts = txt.split("/ipfs/")
                 if len(parts) > 1:
                     cid = parts[1]
-                    print(f"Resolved CID from DNS TXT: {cid}")
+                    print(f"Resolved main site CID: {cid}")
                     return cid
     except Exception as e:
-        print(f"DNS TXT lookup failed: {e}")
-    raise Exception("Could not resolve CID for amykellam.com")
+        print(f"DNS lookup failed: {e}")
+    raise Exception("Could not resolve main site CID")
 
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
@@ -39,6 +36,37 @@ def sign_attestation(data_dict):
     message_hash = encode_defunct(text=message)
     signed = account.sign_message(message_hash)
     return signed.signature.hex()
+
+def update_cloudflare_dnslink(new_cid):
+    # Find the existing TXT record
+    headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"}
+    url = f"https://api.cloudflare.com/client/v4/zones/{CLOUDFLARE_ZONE_ID}/dns_records"
+    resp = requests.get(url, headers=headers, params={"name": DNS_RECORD_NAME, "type": "TXT"})
+    resp.raise_for_status()
+    records = resp.json()["result"]
+    if records:
+        record_id = records[0]["id"]
+        # Update existing record
+        data = {
+            "type": "TXT",
+            "name": DNS_RECORD_NAME,
+            "content": f"dnslink=/ipfs/{new_cid}",
+            "ttl": 120
+        }
+        update_resp = requests.put(f"{url}/{record_id}", headers=headers, json=data)
+        update_resp.raise_for_status()
+        print(f"Updated DNSLink for {DNS_RECORD_NAME} to /ipfs/{new_cid}")
+    else:
+        # Create new record
+        data = {
+            "type": "TXT",
+            "name": DNS_RECORD_NAME,
+            "content": f"dnslink=/ipfs/{new_cid}",
+            "ttl": 120
+        }
+        create_resp = requests.post(url, headers=headers, json=data)
+        create_resp.raise_for_status()
+        print(f"Created DNSLink for {DNS_RECORD_NAME} to /ipfs/{new_cid}")
 
 def main():
     print("Starting heartbeat...")
@@ -56,18 +84,24 @@ def main():
     signature = sign_attestation(attestation)
     attestation["signature"] = signature
 
-    # Fetch existing log from current IPNS address (if any)
+    # Fetch existing log from the current DNSLink of log subdomain
     log = []
     try:
-        log_url = f"https://ipfs.io/ipns/{IPNS_NAME}"
-        resp = requests.get(log_url, timeout=10)
-        if resp.status_code == 200:
-            log = resp.json()
-            print(f"Fetched existing log with {len(log)} entries.")
-        else:
-            print("No existing log found, starting fresh.")
+        # Resolve log.amykellam.com via DNSLink
+        answers = dns.resolver.resolve("_dnslink.log.amykellam.com", "TXT")
+        for rdata in answers:
+            txt = rdata.to_text().strip('"')
+            if "dnslink=" in txt:
+                parts = txt.split("/ipfs/")
+                if len(parts) > 1:
+                    old_cid = parts[1]
+                    resp = requests.get(f"https://ipfs.io/ipfs/{old_cid}", timeout=10)
+                    if resp.status_code == 200:
+                        log = resp.json()
+                        print(f"Fetched existing log with {len(log)} entries.")
+                    break
     except Exception as e:
-        print(f"Could not fetch existing log: {e}")
+        print(f"No existing log found: {e}")
 
     log.append(attestation)
     if len(log) > 365:
@@ -81,23 +115,10 @@ def main():
     new_cid = pinata_resp.json()["IpfsHash"]
     print(f"Pinned new log to Pinata with CID: {new_cid}")
 
-    # Update IPNS using Filebase S3 API (works reliably)
-    s3 = boto3.client('s3',
-        endpoint_url='https://s3.filebase.com',
-        aws_access_key_id=FILEBASE_ACCESS_KEY,
-        aws_secret_access_key=FILEBASE_SECRET_KEY,
-        config=Config(signature_version='s3v4')
-    )
-    # The IPNS name is stored as an object in the special 'ipns' bucket
-    try:
-        s3.put_object(Bucket='ipns', Key=IPNS_NAME, Body=new_cid, ContentType='text/plain')
-        print(f"IPNS updated successfully: https://ipfs.io/ipns/{IPNS_NAME}")
-    except Exception as e:
-        print(f"IPNS update via S3 failed: {e}")
-        # Fallback: print CID for manual update
-        print(f"Please manually set IPNS name {IPNS_NAME} to CID {new_cid} in Filebase dashboard.")
+    # Update Cloudflare DNSLink
+    update_cloudflare_dnslink(new_cid)
 
-    print("Heartbeat completed.")
+    print("Heartbeat complete. Log available at https://log.amykellam.com")
 
 if __name__ == "__main__":
     main()
