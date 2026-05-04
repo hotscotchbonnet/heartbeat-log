@@ -1,0 +1,10 @@
+[
+  {
+    "type": "heartbeat",
+    "site": "amykellam.com",
+    "cid": "bafybeia5wcbfbrif5t2lpf6aftgrnwvlegdik7b4nw2pbgqc3krg4ge6ue",
+    "timestamp": "2026-05-04T21:52:39.840352+00:00",
+    "agentAddress": "0xA073751b8AeCdc6e4586cb0502A95d1961Cf4E87",
+    "signature": "25e1f1bf9f8a4c970f18620ddf315c573d401a532481f7b119647bc07885e6f87626ddbb46bba77ce183c1eef13fdfdfae8a6b5f4bf566fd6c95bcda86fddba01b"
+  }
+]
