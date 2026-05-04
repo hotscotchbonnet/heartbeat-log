@@ -43,7 +43,22 @@ jobs:
             set -e
             echo \"$PRIVATE_KEY_B64\" | base64 -d > /tmp/key.pem
             ipfs init
+            # Import the key
             ipfs key import heartbeat-key -f pem-pkcs8-cleartext /tmp/key.pem
+            # Fetch the CID from a public gateway (to make it available locally)
+            echo \"Fetching $NEW_CID from gateway...\"
+            wget -O /dev/null https://ipfs.io/ipfs/$NEW_CID || curl -s -o /dev/null https://ipfs.io/ipfs/$NEW_CID
+            # Alternative: use ipfs get (requires the daemon, but we can run a temporary daemon)
+            # Start the IPFS daemon in the background
+            ipfs daemon &
+            DAEMON_PID=$!
+            # Wait for daemon to start
+            sleep 10
+            # Now fetch the CID
+            ipfs get /ipfs/$NEW_CID
+            # Publish to IPNS
             ipfs name publish --key=heartbeat-key /ipfs/$NEW_CID
+            # Kill daemon (optional)
+            kill $DAEMON_PID
             echo \"✅ Published $NEW_CID to $IPNS_NAME\"
             "
