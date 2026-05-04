@@ -40,21 +40,27 @@ def main():
     }
     attestation["signature"] = sign_attestation(attestation)
 
-    # Load existing log if it exists
+    # Load existing log.json from the current directory (if it exists)
     log = []
     if os.path.exists('log.json'):
         with open('log.json', 'r') as f:
-            log = json.load(f)
-        print(f"Loaded {len(log)} existing entries.")
+            try:
+                log = json.load(f)
+                print(f"Loaded {len(log)} existing entries.")
+            except json.JSONDecodeError:
+                print("Existing log.json is corrupted, starting fresh.")
+    else:
+        print("No existing log.json, starting fresh.")
 
     log.append(attestation)
     if len(log) > 365:
         log = log[-365:]
 
-    # Write to file
+    # Write to log.json
     with open('log.json', 'w') as f:
-        json.dump(log, f)
-    print(f"Updated log.json with {len(log)} entries.")
+        json.dump(log, f, indent=2)
+    print(f"Successfully wrote log.json with {len(log)} entries.")
+    print(f"Last entry CID: {current_cid}")
 
 if __name__ == "__main__":
     main()
