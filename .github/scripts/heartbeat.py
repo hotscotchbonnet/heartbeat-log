@@ -38,36 +38,30 @@ def sign_attestation(data_dict):
     return signed.signature.hex()
 
 def update_cloudflare_dnslink(new_cid):
-    # Find the existing TXT record
     headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"}
     url = f"https://api.cloudflare.com/client/v4/zones/{CLOUDFLARE_ZONE_ID}/dns_records"
-    resp = requests.get(url, headers=headers, params={"name": DNS_RECORD_NAME, "type": "TXT"})
+    
+    # Fetch all existing TXT records for _dnslink.log
+    resp = requests.get(url, headers=headers, params={"name": "_dnslink.log", "type": "TXT"})
     resp.raise_for_status()
     records = resp.json()["result"]
-    if records:
-        record_id = records[0]["id"]
-        # Update existing record
-        data = {
-            "type": "TXT",
-            "name": DNS_RECORD_NAME,
-            "content": f"dnslink=/ipfs/{new_cid}",
-            "ttl": 120
-        }
-        update_resp = requests.put(f"{url}/{record_id}", headers=headers, json=data)
-        update_resp.raise_for_status()
-        print(f"Updated DNSLink for {DNS_RECORD_NAME} to /ipfs/{new_cid}")
-    else:
-        # Create new record
-        data = {
-            "type": "TXT",
-            "name": DNS_RECORD_NAME,
-            "content": f"dnslink=/ipfs/{new_cid}",
-            "ttl": 120
-        }
-        create_resp = requests.post(url, headers=headers, json=data)
-        create_resp.raise_for_status()
-        print(f"Created DNSLink for {DNS_RECORD_NAME} to /ipfs/{new_cid}")
-
+    
+    # Delete each existing record
+    for record in records:
+        del_resp = requests.delete(f"{url}/{record['id']}", headers=headers)
+        del_resp.raise_for_status()
+        print(f"Deleted existing TXT record: {record['id']}")
+    
+    # Create a fresh record
+    data = {
+        "type": "TXT",
+        "name": "_dnslink.log",
+        "content": f"dnslink=/ipfs/{new_cid}",
+        "ttl": 120
+    }
+    create_resp = requests.post(url, headers=headers, json=data)
+    create_resp.raise_for_status()
+    print(f"Created fresh DNSLink for _dnslink.log to /ipfs/{new_cid}")
 def main():
     print("Starting heartbeat...")
     current_cid = get_current_cid()
