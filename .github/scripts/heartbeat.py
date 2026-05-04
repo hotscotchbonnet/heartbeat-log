@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import os
+import subprocess
+import time
 import requests
 import dns.resolver
 from datetime import datetime, timezone
@@ -10,10 +12,9 @@ from eth_account.messages import encode_defunct
 # ----- Configuration -----
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
-PINATA_JWT = os.environ["PINATA_JWT"]
-CLOUDFLARE_API_TOKEN = os.environ["CLOUDFLARE_API_TOKEN"]
-CLOUDFLARE_ZONE_ID = os.environ["CLOUDFLARE_ZONE_ID"]
-DNS_RECORD_NAME = "_dnslink.log"  # TXT record for log subdomain
+PINATA_JWT = os.environ.get("PINATA_JWT", "")  # optional backup
+IPFS_PRIVATE_KEY_B64 = os.environ["IPFS_PRIVATE_KEY"]
+IPNS_NAME = os.environ.get("IPNS_NAME", "")   # optional, script can read from key
 
 def get_current_cid():
     try:
@@ -37,40 +38,21 @@ def sign_attestation(data_dict):
     signed = account.sign_message(message_hash)
     return signed.signature.hex()
 
-def update_cloudflare_dnslink(new_cid):
-    headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"}
-    url = f"https://api.cloudflare.com/client/v4/zones/{CLOUDFLARE_ZONE_ID}/dns_records"
-    
-    # Search for existing TXT record with name exactly "_dnslink.log"
-    params = {"type": "TXT", "name": "_dnslink.log"}
-    resp = requests.get(url, headers=headers, params=params)
-    resp.raise_for_status()
-    result = resp.json()
-    existing = result["result"]
-    
-    if existing:
-        # Update the first matching record
-        record_id = existing[0]["id"]
-        data = {
-            "type": "TXT",
-            "name": "_dnslink.log",
-            "content": f"dnslink=/ipfs/{new_cid}",
-            "ttl": 120
-        }
-        update_resp = requests.put(f"{url}/{record_id}", headers=headers, json=data)
-        update_resp.raise_for_status()
-        print(f"Updated TXT record _dnslink.log -> /ipfs/{new_cid}")
-    else:
-        # Create new record
-        data = {
-            "type": "TXT",
-            "name": "_dnslink.log",
-            "content": f"dnslink=/ipfs/{new_cid}",
-            "ttl": 120
-        }
-        create_resp = requests.post(url, headers=headers, json=data)
-        create_resp.raise_for_status()
-        print(f"Created TXT record _dnslink.log -> /ipfs/{new_cid}")
+def get_ipns_name():
+    # Try to read from environment, otherwise derive from key after import
+    if IPNS_NAME:
+        return IPNS_NAME
+    # Fallback: import key temporarily to get the name
+    with open("/tmp/key.priv", "w") as f:
+        f.write(IPFS_PRIVATE_KEY_B64)
+    result = subprocess.run(
+        ["ipfs", "key", "import", "temp-key", "-"],
+        input=base64.b64decode(IPFS_PRIVATE_KEY_B64),
+        capture_output=True, text=True
+    )
+    # This is messy; better to set IPNS_NAME secret. We'll require it.
+    raise Exception("Please set IPNS_NAME secret")
+
 def main():
     print("Starting heartbeat...")
     current_cid = get_current_cid()
@@ -87,41 +69,52 @@ def main():
     signature = sign_attestation(attestation)
     attestation["signature"] = signature
 
-    # Fetch existing log from the current DNSLink of log subdomain
+    # Fetch existing log from current IPNS (via public gateway)
     log = []
     try:
-        # Resolve log.amykellam.com via DNSLink
-        answers = dns.resolver.resolve("_dnslink.log.amykellam.com", "TXT")
-        for rdata in answers:
-            txt = rdata.to_text().strip('"')
-            if "dnslink=" in txt:
-                parts = txt.split("/ipfs/")
-                if len(parts) > 1:
-                    old_cid = parts[1]
-                    resp = requests.get(f"https://ipfs.io/ipfs/{old_cid}", timeout=10)
-                    if resp.status_code == 200:
-                        log = resp.json()
-                        print(f"Fetched existing log with {len(log)} entries.")
-                    break
+        resp = requests.get(f"https://ipfs.io/ipns/{IPNS_NAME}", timeout=10)
+        if resp.status_code == 200:
+            log = resp.json()
+            print(f"Fetched existing log: {len(log)} entries")
     except Exception as e:
-        print(f"No existing log found: {e}")
+        print(f"No existing log or fetch failed: {e}")
 
     log.append(attestation)
     if len(log) > 365:
         log = log[-365:]
 
-    # Pin new log to Pinata
-    headers = {"Authorization": f"Bearer {PINATA_JWT}", "Content-Type": "application/json"}
-    payload = {"pinataContent": log, "pinataMetadata": {"name": "heartbeat_log.json"}}
-    pinata_resp = requests.post("https://api.pinata.cloud/pinning/pinJSONToIPFS", json=payload, headers=headers)
-    pinata_resp.raise_for_status()
-    new_cid = pinata_resp.json()["IpfsHash"]
-    print(f"Pinned new log to Pinata with CID: {new_cid}")
+    # Optional: Pin to Pinata as backup (keep this, it's reliable)
+    if PINATA_JWT:
+        headers = {"Authorization": f"Bearer {PINATA_JWT}", "Content-Type": "application/json"}
+        payload = {"pinataContent": log, "pinataMetadata": {"name": "heartbeat_log.json"}}
+        pinata_resp = requests.post("https://api.pinata.cloud/pinning/pinJSONToIPFS", json=payload, headers=headers)
+        pinata_resp.raise_for_status()
+        new_cid = pinata_resp.json()["IpfsHash"]
+        print(f"Pinned to Pinata (backup): {new_cid}")
+    else:
+        # If no Pinata, we need to add the file to the local node directly
+        new_cid = None
 
-    # Update Cloudflare DNSLink
-    update_cloudflare_dnslink(new_cid)
+    # --- IPFS local node publishing ---
+    # Write log to file
+    with open("/tmp/log.json", "w") as f:
+        json.dump(log, f)
 
-    print("Heartbeat complete. Log available at https://log.amykellam.com")
+    # Add file to local node (node must be running)
+    add_output = subprocess.check_output(["ipfs", "add", "-Q", "/tmp/log.json"], text=True).strip()
+    new_cid = add_output
+    print(f"Added log to local node: {new_cid}")
+
+    # Import IPNS private key
+    key_import_cmd = f'echo "{IPFS_PRIVATE_KEY_B64}" | base64 -d | ipfs key import heartbeat-key -'
+    subprocess.run(key_import_cmd, shell=True, check=True)
+
+    # Publish to IPNS
+    pub_output = subprocess.check_output(["ipfs", "name", "publish", "--key=heartbeat-key", f"/ipfs/{new_cid}"], text=True)
+    print(f"IPNS published: {pub_output.strip()}")
+
+    print("Heartbeat complete.")
+    print(f"Log available at: https://ipfs.io/ipns/{IPNS_NAME}")
 
 if __name__ == "__main__":
     main()
