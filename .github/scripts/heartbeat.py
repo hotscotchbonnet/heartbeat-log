@@ -2,34 +2,49 @@
 import json
 import os
 import requests
+import dns.resolver
 from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
 
 # ----- Configuration -----
 SITE_DOMAIN = "amykellam.com"
-GATEWAY = "https://cloudflare-ipfs.com/ipns/"
+# Use ipfs.io gateway instead of cloudflare-ipfs.com
+GATEWAY = "https://ipfs.io/ipns/"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 PINATA_JWT = os.environ["PINATA_JWT"]
 FILEBASE_ACCESS_KEY = os.environ["FILEBASE_ACCESS_KEY"]
 IPNS_NAME = os.environ["IPNS_NAME"]
 
 def get_current_cid():
-    resp = requests.get(GATEWAY + SITE_DOMAIN, headers={"Accept": "application/vnd.ipld.raw"})
-    if resp.status_code != 200:
-        raise Exception(f"Resolution failed: {resp.status_code}")
-    cid = resp.headers.get("Ipfs-Hash")
-    if not cid:
-        import dns.resolver
+    """Get current CID via DNS TXT record (most reliable) or fallback to gateway"""
+    # Method 1: Direct DNS TXT lookup (no HTTP, works anywhere)
+    try:
         answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
         for rdata in answers:
             txt = rdata.to_text().strip('"')
             if "dnslink=" in txt:
-                cid = txt.split("/ipfs/")[-1]
-                break
-    if not cid:
-        raise Exception("Could not extract CID")
-    return cid
+                # Format: dnslink=/ipfs/Qm... or dnslink=/ipns/...
+                parts = txt.split("/ipfs/")
+                if len(parts) > 1:
+                    cid = parts[1]
+                    print(f"Resolved CID from DNS TXT: {cid}")
+                    return cid
+    except Exception as e:
+        print(f"DNS TXT lookup failed: {e}")
+
+    # Method 2: Fallback to IPFS gateway
+    try:
+        resp = requests.get(GATEWAY + SITE_DOMAIN, headers={"Accept": "application/vnd.ipld.raw"}, timeout=10)
+        if resp.status_code == 200:
+            cid = resp.headers.get("Ipfs-Hash")
+            if cid:
+                print(f"Resolved CID from gateway: {cid}")
+                return cid
+    except Exception as e:
+        print(f"Gateway lookup failed: {e}")
+
+    raise Exception("Could not resolve CID for amykellam.com")
 
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
@@ -83,7 +98,7 @@ def main():
     new_cid = pinata_resp.json()["IpfsHash"]
     print(f"Pinned new log to Pinata with CID: {new_cid}")
 
-    # Update Filebase IPNS name to point to the new CID
+    # Update Filebase IPNS name
     filebase_api_url = "https://api.filebase.com/v1/ipns/publish"
     fb_payload = {"name": IPNS_NAME, "cid": new_cid}
     fb_headers = {
