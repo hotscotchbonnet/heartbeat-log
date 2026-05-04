@@ -2,8 +2,8 @@ name: Daily Site Heartbeat
 
 on:
   schedule:
-    - cron: '0 9 * * *'      # Daily at 09:00 UTC
-  workflow_dispatch:          # Allow manual trigger
+    - cron: '0 9 * * *'
+  workflow_dispatch:
 
 jobs:
   heartbeat:
@@ -14,12 +14,11 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        run: pip install eth_account requests dnspython boto3
+        run: pip install eth_account requests dnspython
       - name: Run heartbeat agent
         env:
           AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
           FILEBASE_ACCESS_KEY: ${{ secrets.FILEBASE_ACCESS_KEY }}
-          FILEBASE_SECRET_KEY: ${{ secrets.FILEBASE_SECRET_KEY }}
           IPNS_NAME: ${{ secrets.IPNS_NAME }}
         run: python .github/scripts/heartbeat.py
