@@ -1,4 +1,4 @@
-name: Generate w3name Key (Python)
+name: Generate IPFS Key Pair
 
 on:
   workflow_dispatch:
@@ -6,21 +6,24 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    container:
+      image: ipfs/kubo:latest
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install w3name Python package
-        run: pip install w3name
-      - name: Generate key
+      - name: Generate RSA key
         run: |
-          python3 << 'EOF'
-          import w3name
-          import base64
-          name = w3name.Name.create()
-          private_key_bytes = name.key.bytes
-          private_key_b64 = base64.b64encode(private_key_bytes).decode('ascii')
-          print("IPNS_NAME=" + name.to_str())
-          print("W3NAME_PRIVATE_KEY=" + private_key_b64)
-          EOF
+          # Initialize IPFS repo (needed for key commands)
+          ipfs init
+          # Generate a 2048-bit RSA key named 'heartbeat-key'
+          ipfs key gen --type=rsa --size=2048 heartbeat-key
+          # Get the IPNS name (Peer ID)
+          IPNS_NAME=$(ipfs key list -l | grep heartbeat-key | awk '{print $2}')
+          echo "IPNS_NAME=$IPNS_NAME" >> $GITHUB_ENV
+          # Export the private key to a file (in PEM format)
+          ipfs key export heartbeat-key -o /tmp/key.pem
+          # Convert PEM to base64 for safe storage as a secret
+          BASE64_KEY=$(base64 -w 0 /tmp/key.pem)
+          echo "BASE64_PRIVATE_KEY=$BASE64_KEY" >> $GITHUB_ENV
+      - name: Show values (copy these)
+        run: |
+          echo "IPNS_NAME: ${{ env.IPNS_NAME }}"
+          echo "BASE64_PRIVATE_KEY: ${{ env.BASE64_PRIVATE_KEY }}"
