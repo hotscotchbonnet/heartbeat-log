@@ -1,0 +1,25 @@
+name: Generate w3name Key
+
+on:
+  workflow_dispatch:   # manual trigger only
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Generate w3name key
+        run: |
+          npm install w3name
+          node -e "
+            const { Name } = require('w3name');
+            (async () => {
+              const name = await Name.create();
+              const privateKeyBase64 = Buffer.from(name.key.bytes).toString('base64');
+              console.log('IPNS_NAME=' + name.toString());
+              console.log('W3NAME_PRIVATE_KEY=' + privateKeyBase64);
+            })();
+          "
