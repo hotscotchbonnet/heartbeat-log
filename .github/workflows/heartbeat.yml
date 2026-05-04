@@ -17,12 +17,11 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        run: pip install eth_account requests dnspython boto3   # <-- boto3 added
+        run: pip install eth_account requests dnspython
       - name: Run heartbeat agent
         env:
           AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
-          FILEBASE_ACCESS_KEY: ${{ secrets.FILEBASE_ACCESS_KEY }}
-          FILEBASE_SECRET_KEY: ${{ secrets.FILEBASE_SECRET_KEY }}
-          IPNS_NAME: ${{ secrets.IPNS_NAME }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
         run: python .github/scripts/heartbeat.py
