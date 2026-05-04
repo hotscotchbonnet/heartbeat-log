@@ -1,20 +1,27 @@
-  name: Daily Site Heartbeat
+name: Daily Site Heartbeat
 
 on:
   schedule:
     - cron: '0 9 * * *'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   heartbeat:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Python deps
+
+      - name: Install Python dependencies
         run: pip install eth_account requests dnspython
+
       - name: Run heartbeat agent (Python)
         id: heartbeat
         env:
@@ -23,18 +30,19 @@ jobs:
           IPNS_NAME: ${{ secrets.IPNS_NAME }}
         run: python .github/scripts/heartbeat.py
 
-      - name: Publish to IPNS (using Docker)
+      - name: Publish to IPNS (using IPFS Docker container)
         uses: docker://ipfs/kubo:latest
         env:
-          IPNS_NAME: ${{ secrets.IPNS_NAME }}
           PRIVATE_KEY_B64: ${{ secrets.IPFS_PRIVATE_KEY_BASE64 }}
+          IPNS_NAME: ${{ secrets.IPNS_NAME }}
           NEW_CID: ${{ steps.heartbeat.outputs.new_cid }}
         with:
           entrypoint: /bin/sh
           args: |
             -c "
-            echo $PRIVATE_KEY_B64 | base64 -d > /tmp/key.pem
+            echo \"$PRIVATE_KEY_B64\" | base64 -d > /tmp/key.pem
             ipfs init
             ipfs key import heartbeat-key -f pem < /tmp/key.pem
             ipfs name publish --key=heartbeat-key /ipfs/$NEW_CID
+            echo \"✅ Published $NEW_CID to $IPNS_NAME\"
             "
