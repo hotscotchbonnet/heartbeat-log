@@ -1,0 +1,28 @@
+name: Generate IPNS Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install IPFS Kubo
+        run: |
+          wget https://dist.ipfs.tech/kubo/v0.30.0/kubo_v0.30.0_linux-amd64.tar.gz
+          tar -xvzf kubo_v0.30.0_linux-amd64.tar.gz
+          cd kubo
+          sudo bash install.sh
+          ipfs init
+
+      - name: Generate IPNS key
+        run: |
+          IPNS_NAME=$(ipfs key gen --type=rsa --size=2048 heartbeat-key)
+          echo "IPNS_NAME=$IPNS_NAME" >> $GITHUB_ENV
+          ipfs key export heartbeat-key -o - | base64 > key.b64
+          echo "IPFS_PRIVATE_KEY=$(cat key.b64)" >> $GITHUB_ENV
+
+      - name: Display secrets
+        run: |
+          echo "IPNS_NAME: ${{ env.IPNS_NAME }}"
+          echo "IPFS_PRIVATE_KEY: ${{ env.IPFS_PRIVATE_KEY }}"
