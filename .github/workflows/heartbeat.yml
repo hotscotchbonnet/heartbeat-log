@@ -1,28 +1,14 @@
-name: Daily Site Heartbeat
-
-on:
-  schedule:
-    - cron: '0 9 * * *'
-  workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-jobs:
-  heartbeat:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install eth_account requests dnspython boto3   # <-- boto3 added
-      - name: Run heartbeat agent
-        env:
-          AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
-          PINATA_JWT: ${{ secrets.PINATA_JWT }}
-          FILEBASE_ACCESS_KEY: ${{ secrets.FILEBASE_ACCESS_KEY }}
-          FILEBASE_SECRET_KEY: ${{ secrets.FILEBASE_SECRET_KEY }}
-          IPNS_NAME: ${{ secrets.IPNS_NAME }}
-        run: python .github/scripts/heartbeat.py
+def sign_attestation(data_dict):
+    account = Account.from_key(PRIVATE_KEY)
+    message = json.dumps(data_dict, sort_keys=True, separators=(',', ':'))
+    message_hash = encode_defunct(text=message)
+    signed = account.sign_message(message_hash)
+    # The signature v is 0 or 1; need to convert to 27 or 28 for ethers
+    v = signed.v
+    if v < 27:
+        v += 27
+    # Reconstruct signature bytes: r (32 bytes) + s (32 bytes) + v (1 byte)
+    r_bytes = signed.r.to_bytes(32, 'big')
+    s_bytes = signed.s.to_bytes(32, 'big')
+    signature_bytes = r_bytes + s_bytes + bytes([v])
+    return signature_bytes.hex()
