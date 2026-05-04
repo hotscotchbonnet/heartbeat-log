@@ -30,7 +30,7 @@ jobs:
           IPNS_NAME: ${{ secrets.IPNS_NAME }}
         run: python .github/scripts/heartbeat.py
 
-      - name: Publish to IPNS (using IPFS Docker container)
+      - name: Publish to IPNS using IPFS Docker
         uses: docker://ipfs/kubo:latest
         env:
           PRIVATE_KEY_B64: ${{ secrets.IPFS_PRIVATE_KEY_BASE64 }}
@@ -40,9 +40,10 @@ jobs:
           entrypoint: /bin/sh
           args: |
             -c "
+            set -e
             echo \"$PRIVATE_KEY_B64\" | base64 -d > /tmp/key.pem
             ipfs init
-            ipfs key import heartbeat-key -f pem < /tmp/key.pem
+            ipfs key import heartbeat-key -f pem /tmp/key.pem
             ipfs name publish --key=heartbeat-key /ipfs/$NEW_CID
             echo \"✅ Published $NEW_CID to $IPNS_NAME\"
             "
