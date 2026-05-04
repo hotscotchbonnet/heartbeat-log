@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import json
 import os
-import requests
 import dns.resolver
 from datetime import datetime, timezone
 from eth_account import Account
@@ -9,9 +8,6 @@ from eth_account.messages import encode_defunct
 
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
-PINATA_JWT = os.environ["PINATA_JWT"]
-# IPNS_NAME is used only to fetch existing log (optional)
-IPNS_NAME = os.environ.get("IPNS_NAME")
 
 def get_current_cid():
     answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
@@ -44,33 +40,21 @@ def main():
     }
     attestation["signature"] = sign_attestation(attestation)
 
-    # Try to fetch existing log from previous IPNS pointer (if available)
+    # Load existing log if it exists
     log = []
-    if IPNS_NAME:
-        try:
-            resp = requests.get(f"https://ipfs.io/ipns/{IPNS_NAME}", timeout=10)
-            if resp.status_code == 200:
-                log = resp.json()
-                print(f"Fetched {len(log)} existing entries.")
-        except Exception as e:
-            print(f"No existing log found, starting fresh: {e}")
+    if os.path.exists('log.json'):
+        with open('log.json', 'r') as f:
+            log = json.load(f)
+        print(f"Loaded {len(log)} existing entries.")
 
     log.append(attestation)
     if len(log) > 365:
         log = log[-365:]
 
-    # Pin to Pinata
-    headers = {"Authorization": f"Bearer {PINATA_JWT}", "Content-Type": "application/json"}
-    pin_resp = requests.post("https://api.pinata.cloud/pinning/pinJSONToIPFS", json=log, headers=headers)
-    pin_resp.raise_for_status()
-    new_cid = pin_resp.json()["IpfsHash"]
-    print(f"Pinned new log CID: {new_cid}")
-
-    # Output for GitHub Actions
-    with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-        print(f"new_cid={new_cid}", file=f)
-        # Also output the full log if needed (optional)
-        # print(f"log_json={json.dumps(log)}", file=f)
+    # Write to file
+    with open('log.json', 'w') as f:
+        json.dump(log, f)
+    print(f"Updated log.json with {len(log)} entries.")
 
 if __name__ == "__main__":
     main()
