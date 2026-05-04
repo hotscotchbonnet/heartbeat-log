@@ -41,33 +41,36 @@ def update_cloudflare_dnslink(new_cid):
     headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"}
     url = f"https://api.cloudflare.com/client/v4/zones/{CLOUDFLARE_ZONE_ID}/dns_records"
     
-    # Fetch ALL TXT records (no filtering by name in params)
-    resp = requests.get(url, headers=headers, params={"type": "TXT"})
+    # Search for existing TXT record with name exactly "_dnslink.log"
+    params = {"type": "TXT", "name": "_dnslink.log"}
+    resp = requests.get(url, headers=headers, params=params)
     resp.raise_for_status()
-    all_records = resp.json()["result"]
+    result = resp.json()
+    existing = result["result"]
     
-    # Find records with name exactly "_dnslink.log" or "_dnslink.log.amykellam.com"
-    to_delete = []
-    for record in all_records:
-        record_name = record["name"]
-        if record_name in ["_dnslink.log", "_dnslink.log.amykellam.com"]:
-            to_delete.append(record)
-    
-    for record in to_delete:
-        del_resp = requests.delete(f"{url}/{record['id']}", headers=headers)
-        del_resp.raise_for_status()
-        print(f"Deleted: {record['name']} (ID: {record['id']})")
-    
-    # Create new record with proper name (without domain)
-    data = {
-        "type": "TXT",
-        "name": "_dnslink.log",
-        "content": f"dnslink=/ipfs/{new_cid}",
-        "ttl": 120
-    }
-    create_resp = requests.post(url, headers=headers, json=data)
-    create_resp.raise_for_status()
-    print(f"Created new TXT record for _dnslink.log -> /ipfs/{new_cid}")
+    if existing:
+        # Update the first matching record
+        record_id = existing[0]["id"]
+        data = {
+            "type": "TXT",
+            "name": "_dnslink.log",
+            "content": f"dnslink=/ipfs/{new_cid}",
+            "ttl": 120
+        }
+        update_resp = requests.put(f"{url}/{record_id}", headers=headers, json=data)
+        update_resp.raise_for_status()
+        print(f"Updated TXT record _dnslink.log -> /ipfs/{new_cid}")
+    else:
+        # Create new record
+        data = {
+            "type": "TXT",
+            "name": "_dnslink.log",
+            "content": f"dnslink=/ipfs/{new_cid}",
+            "ttl": 120
+        }
+        create_resp = requests.post(url, headers=headers, json=data)
+        create_resp.raise_for_status()
+        print(f"Created TXT record _dnslink.log -> /ipfs/{new_cid}")
 def main():
     print("Starting heartbeat...")
     current_cid = get_current_cid()
