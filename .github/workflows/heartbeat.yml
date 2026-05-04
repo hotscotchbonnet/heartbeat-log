@@ -1,3 +1,35 @@
+name: Daily Site Heartbeat
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install eth_account requests dnspython
+
+      - name: Run heartbeat agent (Python)
+        id: heartbeat
+        env:
+          AGENT_PRIVATE_KEY: ${{ secrets.AGENT_PRIVATE_KEY }}
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+          IPNS_NAME: ${{ secrets.IPNS_NAME }}
+        run: python .github/scripts/heartbeat.py
+
       - name: Publish to IPNS using IPFS Docker
         uses: docker://ipfs/kubo:latest
         env:
