@@ -438,5 +438,13 @@
     "timestamp": "2026-06-25T11:38:55.186714+00:00",
     "agentAddress": "0xA073751b8AeCdc6e4586cb0502A95d1961Cf4E87",
     "signature": "43f021741b572a311c048fce3909bc7c79333395505fa5e19d82ac01d7b0223678dea4f0462657890e755ac24a8e0104a72e28a15c12bad90a197da0e736caf61c"
+  },
+  {
+    "type": "heartbeat",
+    "site": "amykellam.com",
+    "cid": "bafybeidtwvjztboqjhz6kwzcmobpl5bptgmnsuaghimj2di523e6xfqqia",
+    "timestamp": "2026-06-26T11:43:32.285810+00:00",
+    "agentAddress": "0xA073751b8AeCdc6e4586cb0502A95d1961Cf4E87",
+    "signature": "9aa7e92348cc3c8b72b4f317436e23f70adb02a4ecf759e6f277158619462fb53f69109f6234d9614f3d457b8927ab0e0675758eb8f980e34c9386ad5714752e1b"
   }
 ]
