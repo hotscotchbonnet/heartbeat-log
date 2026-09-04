@@ -7,7 +7,7 @@ from eth_account import Account
 from eth_account.messages import encode_defunct
 
 SITE_DOMAIN = "amykellam.com"
-FILEBASE_BUCKET = "YOUR_BUCKET_NAME"  # Replace with your Filebase bucket name
+FILEBASE_BUCKET = "akwebsite"  # Replace with your Filebase bucket name
 FILEBASE_ACCESS_KEY = os.environ.get("FILEBASE_ACCESS_KEY", "")
 FILEBASE_SECRET_KEY = os.environ.get("FILEBASE_SECRET_KEY", "")
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
