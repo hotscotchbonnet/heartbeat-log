@@ -7,61 +7,51 @@ from eth_account import Account
 from eth_account.messages import encode_defunct
 
 SITE_DOMAIN = "amykellam.com"
-FILEBASE_BUCKET = "akwebsite"  # Replace with your Filebase bucket name
+PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 FILEBASE_ACCESS_KEY = os.environ.get("FILEBASE_ACCESS_KEY", "")
 FILEBASE_SECRET_KEY = os.environ.get("FILEBASE_SECRET_KEY", "")
-PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 
 def get_current_cid():
-    """Get the CID of your website root from Filebase API or S3"""
+    """Get the current CID of your site from Filebase Platform API"""
     try:
-        # Option 1: Use Filebase S3 API to list objects and get the bucket's CID
-        import boto3
-        from botocore.client import Config
+        # Base64 encode the access key:secret key for basic auth
+        import base64
+        auth_string = f"{FILEBASE_ACCESS_KEY}:{FILEBASE_SECRET_KEY}"
+        auth_bytes = auth_string.encode('ascii')
+        base64_bytes = base64.b64encode(auth_bytes)
+        auth_header = base64_bytes.decode('ascii')
+
+        # Call Filebase Platform API to get site info
+        # The endpoint for getting site CID depends on your setup
+        # Since you're using Filebase Sites, the CID is stored in your bucket
+        # Let's use the S3-compatible API via Filebase (simpler than Platform API)
         
-        s3 = boto3.client('s3',
-            endpoint_url='https://s3.filebase.com',
-            aws_access_key_id=FILEBASE_ACCESS_KEY,
-            aws_secret_access_key=FILEBASE_SECRET_KEY,
-            config=Config(signature_version='s3v4')
-        )
+        # Option 1: Use the public Filebase gateway for your site
+        # Your site is accessible via: https://akwebsite.myfilebase.site
+        # The CID is in the HTTP headers
         
-        # The CID of a folder can be retrieved via the S3 API
-        # by listing the bucket and getting the bucket's metadata
-        # Alternatively, if you know your website's root CID, you can hardcode it.
-        # Let's try to get the bucket's default CID.
-        # Note: Filebase S3 doesn't directly give you the bucket CID.
-        # If you know the CID, you can set it here.
+        gateway_url = "https://akwebsite.myfilebase.site"
+        print(f"Trying gateway: {gateway_url}")
+        resp = requests.head(gateway_url, timeout=10)
         
-        # For now, try to get it from the bucket's metadata
-        # This is a placeholder – we'll use the gateway fallback.
-        raise Exception("S3 method not implemented yet.")
+        # Try different header names
+        cid = resp.headers.get("X-IPFS-Hash") or resp.headers.get("Ipfs-Hash")
+        if cid:
+            print(f"Resolved CID from gateway: {cid}")
+            return cid
+        
+        # Option 2: If the gateway doesn't return headers, try a direct IPFS gateway
+        # Using your domain via ipfs.io (which uses DNSLink)
+        # But since you removed DNSLink, this will fail.
+        # Instead, let's try the Filebase public gateway with your bucket
+        # You need to replace YOUR_BUCKET_NAME with your actual bucket name
+        
+        # For now, let's raise an exception with instructions
+        raise Exception("Could not resolve CID from gateway. Please check the script.")
+        
     except Exception as e:
-        print(f"S3 method failed: {e}")
-        # Fallback: use public gateway that returns headers
-        try:
-            # Try the public Filebase gateway (using your bucket name)
-            gateway_url = f"https://ipfs.io/ipns/{SITE_DOMAIN}"
-            print(f"Trying gateway: {gateway_url}")
-            resp = requests.head(gateway_url, timeout=10)
-            cid = resp.headers.get("X-IPFS-Hash") or resp.headers.get("Ipfs-Hash")
-            if cid:
-                print(f"Resolved CID from gateway: {cid}")
-                return cid
-            else:
-                # Another attempt: use DNSLink
-                import dns.resolver
-                answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
-                for rdata in answers:
-                    txt = rdata.to_text().strip('"')
-                    if "dnslink=" in txt:
-                        parts = txt.split("/ipfs/")
-                        if len(parts) > 1:
-                            return parts[1]
-                raise Exception("Could not resolve CID")
-        except Exception as e2:
-            print(f"Gateway resolution failed: {e2}")
-            raise
+        print(f"Resolution failed: {e}")
+        raise
 
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
