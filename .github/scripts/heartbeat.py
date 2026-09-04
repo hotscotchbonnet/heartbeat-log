@@ -9,11 +9,24 @@ from eth_account.messages import encode_defunct
 
 # ---------- Configuration ----------
 SITE_DOMAIN = "amykellam.com"
-FILEBASE_BUCKET = "akwebsite"  # <-- REPLACE with your bucket name
+FILEBASE_BUCKET = "akwebsite"  # <-- REPLACE with your bucket name if different
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 FILEBASE_ACCESS_KEY = os.environ.get("FILEBASE_ACCESS_KEY", "")
 FILEBASE_SECRET_KEY = os.environ.get("FILEBASE_SECRET_KEY", "")
 
+def clean_cid(cid):
+    """Remove W/ prefix, quotes, and whitespace from a CID string."""
+    if not cid:
+        return cid
+    # Remove W/ prefix and quotes
+    cid = cid.strip()
+    if cid.startswith('W/"'):
+        cid = cid[3:]
+    elif cid.startswith('"'):
+        cid = cid[1:]
+    if cid.endswith('"'):
+        cid = cid[:-1]
+    return cid.strip()
 
 def get_current_cid():
     """
@@ -28,7 +41,6 @@ def get_current_cid():
             base64_bytes = base64.b64encode(auth_bytes)
             auth_header = base64_bytes.decode('ascii')
 
-            # Use the Filebase Platform API to get bucket details
             url = f"https://api.filebase.io/v1/buckets/{FILEBASE_BUCKET}"
             headers = {"Authorization": f"Basic {auth_header}"}
             print(f"Fetching CID from Filebase API: {url}")
@@ -36,9 +48,9 @@ def get_current_cid():
 
             if resp.status_code == 200:
                 data = resp.json()
-                # The CID is typically in the response. Adjust based on actual API response.
                 cid = data.get("cid") or data.get("ipfs_cid") or data.get("root_cid")
                 if cid:
+                    cid = clean_cid(cid)
                     print(f"Resolved CID from Filebase API: {cid}")
                     return cid
                 else:
@@ -55,8 +67,7 @@ def get_current_cid():
         resp = requests.head(gateway_url, timeout=10)
         cid = resp.headers.get("X-IPFS-Hash") or resp.headers.get("Ipfs-Hash") or resp.headers.get("ETag")
         if cid:
-            # Clean up ETag (remove quotes if present)
-            cid = cid.strip('"')
+            cid = clean_cid(cid)
             print(f"Resolved CID from gateway: {cid}")
             return cid
     except Exception as e:
@@ -71,7 +82,7 @@ def get_current_cid():
             if "dnslink=" in txt:
                 parts = txt.split("/ipfs/")
                 if len(parts) > 1:
-                    cid = parts[1]
+                    cid = clean_cid(parts[1])
                     print(f"Resolved CID from DNSLink: {cid}")
                     return cid
     except Exception as e:
@@ -80,13 +91,11 @@ def get_current_cid():
     # ---------- If all methods fail ----------
     raise Exception("Could not resolve CID. Please check your Filebase bucket and credentials.")
 
-
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
     message = json.dumps(data_dict, sort_keys=True, separators=(',', ':'))
     signed = account.sign_message(encode_defunct(text=message))
     return signed.signature.hex()
-
 
 def main():
     print("Starting heartbeat...")
@@ -124,7 +133,6 @@ def main():
         json.dump(log, f, indent=2)
     print(f"Successfully wrote log.json with {len(log)} entries.")
     print(f"Last entry CID: {current_cid}")
-
 
 if __name__ == "__main__":
     main()
