@@ -20,7 +20,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install eth_account dnspython
+        run: pip install eth_account dnspython requests
 
       - name: Run heartbeat agent
         run: python .github/scripts/heartbeat.py
