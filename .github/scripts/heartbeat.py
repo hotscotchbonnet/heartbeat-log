@@ -1,20 +1,57 @@
 #!/usr/bin/env python3
 import json
 import os
+import requests
 from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
 
 SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
-
-
-WEBSITE_CID = "Qmbafybeid6h77nvghij4ozchgfa273bshk5jfuhe74tuyqd4jn5siw6ehgca"  # <-- UPDATE THIS
+FILEBASE_ACCESS_KEY = os.environ.get("FILEBASE_ACCESS_KEY", "")
+FILEBASE_SECRET_KEY = os.environ.get("FILEBASE_SECRET_KEY", "")
 
 def get_current_cid():
-    """Return the hardcoded CID of your website"""
-    print(f"Using hardcoded CID: {WEBSITE_CID}")
-    return WEBSITE_CID
+    """Get the current CID of your site from Filebase Platform API"""
+    try:
+        # Base64 encode the access key:secret key for basic auth
+        import base64
+        auth_string = f"{FILEBASE_ACCESS_KEY}:{FILEBASE_SECRET_KEY}"
+        auth_bytes = auth_string.encode('ascii')
+        base64_bytes = base64.b64encode(auth_bytes)
+        auth_header = base64_bytes.decode('ascii')
+
+        # Call Filebase Platform API to get site info
+        # The endpoint for getting site CID depends on your setup
+        # Since you're using Filebase Sites, the CID is stored in your bucket
+        # Let's use the S3-compatible API via Filebase (simpler than Platform API)
+        
+        # Option 1: Use the public Filebase gateway for your site
+        # Your site is accessible via: https://akwebsite.myfilebase.site
+        # The CID is in the HTTP headers
+        
+        gateway_url = "https://akwebsite.myfilebase.site"
+        print(f"Trying gateway: {gateway_url}")
+        resp = requests.head(gateway_url, timeout=10)
+        
+        # Try different header names
+        cid = resp.headers.get("X-IPFS-Hash") or resp.headers.get("Ipfs-Hash")
+        if cid:
+            print(f"Resolved CID from gateway: {cid}")
+            return cid
+        
+        # Option 2: If the gateway doesn't return headers, try a direct IPFS gateway
+        # Using your domain via ipfs.io (which uses DNSLink)
+        # But since you removed DNSLink, this will fail.
+        # Instead, let's try the Filebase public gateway with your bucket
+        # You need to replace YOUR_BUCKET_NAME with your actual bucket name
+        
+        # For now, let's raise an exception with instructions
+        raise Exception("Could not resolve CID from gateway. Please check the script.")
+        
+    except Exception as e:
+        print(f"Resolution failed: {e}")
+        raise
 
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
