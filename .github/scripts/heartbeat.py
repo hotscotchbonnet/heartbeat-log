@@ -10,14 +10,22 @@ SITE_DOMAIN = "amykellam.com"
 PRIVATE_KEY = os.environ["AGENT_PRIVATE_KEY"]
 
 def get_current_cid():
-    answers = dns.resolver.resolve(f"_dnslink.{SITE_DOMAIN}", "TXT")
-    for rdata in answers:
-        txt = rdata.to_text().strip('"')
-        if "dnslink=" in txt:
-            parts = txt.split("/ipfs/")
-            if len(parts) > 1:
-                return parts[1]
-    raise Exception("Could not resolve CID")
+    # Filebase gateway returns the CID in the response headers
+    import requests
+    try:
+        # Use your Filebase CNAME or the public gateway
+        gateway_url = "https://akwebsite.myfilebase.site"
+        resp = requests.head(gateway_url)
+        # Filebase returns the CID in the 'X-IPFS-Hash' or 'Ipfs-Hash' header
+        cid = resp.headers.get("X-IPFS-Hash") or resp.headers.get("Ipfs-Hash")
+        if cid:
+            print(f"Resolved CID from Filebase gateway: {cid}")
+            return cid
+        else:
+            raise Exception("No CID in headers")
+    except Exception as e:
+        print(f"Gateway resolution failed: {e}")
+        raise
 
 def sign_attestation(data_dict):
     account = Account.from_key(PRIVATE_KEY)
