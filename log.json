@@ -1002,22 +1002,6 @@
   {
     "type": "heartbeat",
     "site": "amykellam.com",
-    "cid": "Qmbafybeid6h77nvghij4ozchgfa273bshk5jfuhe74tuyqd4jn5siw6ehgca",
-    "timestamp": "2026-09-04T20:48:41.722620+00:00",
-    "agentAddress": "0xA073751b8AeCdc6e4586cb0502A95d1961Cf4E87",
-    "signature": "c643e8e4dc75e3d0af182e98ea0fa18bd696b287c0c1bfb5800ed4ee1b3cbe5f1026276d106895c03ab2f9b93b6e943bc3c67710542e3edb9a292edb344ec3f61b"
-  },
-  {
-    "type": "heartbeat",
-    "site": "amykellam.com",
-    "cid": "W/\"bafybeid6h77nvghij4ozchgfa273bshk5jfuhe74tuyqd4jn5siw6ehgca",
-    "timestamp": "2026-09-04T20:57:41.077322+00:00",
-    "agentAddress": "0xA073751b8AeCdc6e4586cb0502A95d1961Cf4E87",
-    "signature": "f0c026aa346602338823fa8c2f8fa171ee8adebb2b255e64e04ce904129c2e3d3629c6df195d839a8620703b7ebbc231e49b506f2e83433e5976937af5015f8b1c"
-  },
-  {
-    "type": "heartbeat",
-    "site": "amykellam.com",
     "cid": "bafybeid6h77nvghij4ozchgfa273bshk5jfuhe74tuyqd4jn5siw6ehgca",
     "timestamp": "2026-09-04T21:05:46.658346+00:00",
     "agentAddress": "0xA073751b8AeCdc6e4586cb0502A95d1961Cf4E87",
